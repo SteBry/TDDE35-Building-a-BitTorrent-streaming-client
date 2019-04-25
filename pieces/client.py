@@ -20,6 +20,7 @@ import logging
 import math
 import os
 import time
+import random
 from asyncio import Queue
 from collections import namedtuple
 from hashlib import sha1
@@ -258,6 +259,14 @@ class PieceManager:
         self.total_pieces = len(torrent.pieces)
         self.fd = os.open(self.torrent.output_file,  os.O_RDWR | os.O_CREAT)
 
+        """
+        Written by Kalle Johansson, April 2019.
+        Used for changing request policy.
+        """
+        self.inorder = True
+        self.zipf = False
+        self.portion = False
+
     def _initiate_pieces(self) -> [Piece]:
         """
         Pre-construct the list of pieces and blocks based on the number of
@@ -365,11 +374,19 @@ class PieceManager:
         if peer_id not in self.peers:
             return None
 
+        """
+        Modified by Kalle Johansson, April 2019
+        """
         block = self._expired_requests(peer_id)
         if not block:
             block = self._next_ongoing(peer_id)
             if not block:
-                block = self._next_missing(peer_id)
+                if self.inorder:
+                    block = self._next_missing(peer_id)
+                elif self.zipf:
+                    block = self._next_zipf(peer_id)
+                elif self.portion:
+                    block = self._next_portion(peer_id)
         return block
 
     def block_received(self, peer_id, piece_index, block_offset, data):
@@ -463,6 +480,7 @@ class PieceManager:
         the next call to this function will not continue with the blocks for
         that piece, rather get the next missing piece.
         """
+
         for index, piece in enumerate(self.missing_pieces):
             if self.peers[peer_id][piece.index]:
                 # Move this piece from missing to ongoing
@@ -480,3 +498,50 @@ class PieceManager:
         pos = piece.index * self.torrent.piece_length
         os.lseek(self.fd, pos, os.SEEK_SET)
         os.write(self.fd, piece.data)
+
+    def _next_zipf(self, peer_id) -> Block:
+        """
+        Written by Kalle Johansson, April 2019
+
+        Go through the missing pieces and return the next block to request
+        or None if no block is left to be requested based on Zipf distribution.
+
+        Zipf distribution is implemented by appending a number of copies of an
+        index based on the Zipf formula and the choosing a random element from
+        the list.
+
+        This will change the state of the piece from missing to ongoing - thus
+        the next call to this function will not continue with the blocks for
+        that piece, rather get another missing piece.
+        """
+        pieces = []
+        last_inorder_piece = self.missing_pieces[0].index - 1
+        for index, piece in enumerate(self.missing_pieces):
+            if self.peers[peer_id][piece.index]:
+                pieces += self.zipf_formula(index, last_inorder_piece) * [index]
+
+        if not pieces:
+            return None
+        else:
+            # Move the selected piece from missing to ongoing
+            piece = self.missing_pieces.pop(random.choice(pieces))
+            self.ongoing_pieces.append(piece)
+            # The missing pieces does not have any previously requested
+            # blocks (then it is ongoing).
+            return piece.next_request()
+
+    def zipf_formula(self, k0, k):
+        """
+        Written by Kalle Johansson, April 2019
+        Uses the Zipf formula to return an integer which represents the chance
+        of the given piece to be chosen.
+        """
+        theta = 1.25
+        precision = 1000
+
+        val = 1 / (k + 1 - k0)**theta
+        return math.ceil(val*precision)
+
+    def _next_portion(self, peer_id) -> Block:
+        # TODO: Implement
+        return None
