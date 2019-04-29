@@ -247,6 +247,7 @@ class PieceManager:
     The strategy on which piece to request is made as simple as possible in
     this implementation.
     """
+
     def __init__(self, torrent):
         self.torrent = torrent
         self.peers = {}
@@ -264,6 +265,7 @@ class PieceManager:
         Used for changing request policy.
         """
         self.inorder = True
+        self.rarest_first = False
         self.zipf = False
         self.portion = False
 
@@ -383,6 +385,8 @@ class PieceManager:
             if not block:
                 if self.inorder:
                     block = self._next_missing(peer_id)
+                elif self.rarest_first:
+                    block = self._next_rarest_first(peer_id)
                 elif self.zipf:
                     block = self._next_zipf(peer_id)
                 elif self.portion:
@@ -533,6 +537,7 @@ class PieceManager:
     def zipf_formula(self, k0, k):
         """
         Written by Kalle Johansson, April 2019
+
         Uses the Zipf formula to return an integer which represents the chance
         of the given piece to be chosen.
         """
@@ -542,6 +547,57 @@ class PieceManager:
         val = 1 / (k + 1 - k0)**theta
         return math.ceil(val*precision)
 
+    def _next_rarest_first(self, peer_id) -> Block:
+        """
+        Written by Kalle Johansson, April 2019
+
+        Iterate over missing pieces and peers to create a list with the number
+        of available copies of a piece in the swarm.
+
+        Go through the missing pieces and return the block to request based on
+        the newly created array or None if no block is left to be requested.
+
+        This will change the state of the piece from missing to ongoing - thus
+        the next call to this function will not continue with the blocks for
+        that piece, rather get the next missing piece.
+
+        NOTE: This is very unefficient since it loops over all peers every time
+        the method is called. This can be done more efficient (see TODO).
+        """
+        piece_count = [0]*len(self.total_pieces)
+
+        # Build piece_count array
+        # TODO: Only do once and increment when HAVE message is received.
+        for index, piece in enumerate(self.missing_pieces):
+            for pid in range(len(self.peers)):
+                if self.peers[pid][piece.index]:
+                    piece_count[index] += 1
+
+        min_index = -1
+        for index, piece in enumerate(self.missing_pieces):
+            if self.peers[peer_id][piece.index]:
+                if min_index == -1 or piece_count[index] < piece_count[min_index]:
+                    min_index = index
+
+        if min_index != -1:
+            # Move this piece from missing to ongoing
+            piece = self.missing_pieces.pop(min_index)
+            self.ongoing_pieces.append(piece)
+            # The missing pieces does not have any previously requested
+            # blocks (then it is ongoing).
+            return piece.next_request()
+        else:
+            return None
+
     def _next_portion(self, peer_id) -> Block:
-        # TODO: Implement
-        return None
+        """
+        Written by Kalle Johansson, April 2019
+
+        Choose a piece using in order or rarest first based on probability.
+        """
+        probability = 9*[True] + [False]
+        choice = random.choice(probability)
+        if choice:
+            return self._next_missing(peer_id)
+        else:
+            return self._next_rarest_first(peer_id)
