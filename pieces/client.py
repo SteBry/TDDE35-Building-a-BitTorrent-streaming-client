@@ -81,6 +81,11 @@ class TorrentClient:
         # Default interval between announce calls (in seconds)
         interval = 30*60
 
+        """
+        Added by Kalle Johansson, April 2019
+        """
+        result = Result(self.piece_manager)
+
         while True:
             if self.piece_manager.complete:
                 logging.info('Torrent fully downloaded!')
@@ -88,6 +93,11 @@ class TorrentClient:
             if self.abort:
                 logging.info('Aborting download...')
                 break
+
+            """
+            Added by Kalle Johansson, April 2019
+            """
+            #result.current_state()
 
             current = time.time()
             if (not previous) or (previous + interval < current):
@@ -104,6 +114,7 @@ class TorrentClient:
                         self.available_peers.put_nowait(peer)
             else:
                 await asyncio.sleep(5)
+
         self.stop()
 
     def _empty_queue(self):
@@ -601,3 +612,36 @@ class PieceManager:
             return self._next_missing(peer_id)
         else:
             return self._next_rarest_first(peer_id)
+
+
+class Result:
+    """
+    Written by Kalle Johansson, April 2019
+
+    Used for gathering measurements about the current state of the client and
+    the entire swarm.
+    """
+    def __init__(self, pm : PieceManager):
+        self.pm = pm
+
+    def current_state(self):
+        print("Received:", str(len(self.pm.have_pieces))+"/"+str(self.pm.total_pieces))
+        print("In order:", self.get_pieces_in_order())
+        print("Pieces in swarm:", self.get_pieces_in_swarm())
+        print("Piece diversity:", self.get_piece_diversity())
+
+    def get_pieces_in_order(self):
+        have = [False] * self.pm.total_pieces
+        for piece in self.pm.have_pieces:
+            have[piece.index] = True
+
+        for i in range(self.pm.total_pieces):
+            if not have[i]:
+                return i
+        return self.pm.total_pieces
+
+    def get_pieces_in_swarm(self):
+        return "Not implemented"
+
+    def get_piece_diversity(self):
+        return "Not implemented"
