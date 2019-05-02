@@ -521,9 +521,10 @@ class PieceManager:
         Go through the missing pieces and return the next block to request
         or None if no block is left to be requested based on Zipf distribution.
 
-        Zipf distribution is implemented by appending a number of copies of an
-        index based on the Zipf formula and the choosing a random element from
-        the list.
+        Zipf distribution is implemented by creating a list of available index
+        for pieces and a list with corresponding weights in accordance with
+        Zipf distribuition and then use the function choices to select an index
+        from the list based on based on the given weights.
 
         This will change the state of the piece from missing to ongoing - thus
         the next call to this function will not continue with the blocks for
@@ -533,16 +534,18 @@ class PieceManager:
             return None
 
         pieces = []
+        weights = []
         last_inorder_piece = self.missing_pieces[0].index
         for index, piece in enumerate(self.missing_pieces):
             if self.peers[peer_id][piece.index]:
-                pieces += self.zipf_formula(index, last_inorder_piece) * [index]
+                pieces.append(piece.index)
+                weights.append(self.zipf_formula(piece.index, last_inorder_piece))
 
         if not pieces:
             return None
         else:
             # Move the selected piece from missing to ongoing
-            piece = self.missing_pieces.pop(random.choice(pieces))
+            piece = self.missing_pieces.pop(random.choices(pieces, weights))
             self.ongoing_pieces.append(piece)
             # The missing pieces does not have any previously requested
             # blocks (then it is ongoing).
@@ -552,14 +555,11 @@ class PieceManager:
         """
         Written by Kalle Johansson, April 2019
 
-        Uses the Zipf formula to return an integer which represents the chance
-        of the given piece to be chosen.
+        Uses the Zipf formula to return float which represents the
+        probability of the given piece to be chosen.
         """
         theta = 1.25
-        precision = 1000
-
-        val = 1 / (k + 1 - k0)**theta
-        return math.ceil(val*precision)
+        return 1 / (k + 1 - k0)**theta
 
     def _next_rarest_first(self, peer_id) -> Block:
         """
