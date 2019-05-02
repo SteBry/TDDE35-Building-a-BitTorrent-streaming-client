@@ -526,6 +526,9 @@ class PieceManager:
         Zipf distribuition and then use the function choices to select an index
         from the list based on based on the given weights.
 
+        NOTE: Index refers to the piece's index in the list of missing pieces,
+        not the variable index that every piece has.
+
         This will change the state of the piece from missing to ongoing - thus
         the next call to this function will not continue with the blocks for
         that piece, rather get another missing piece.
@@ -538,7 +541,7 @@ class PieceManager:
         last_inorder_piece = self.missing_pieces[0].index
         for index, piece in enumerate(self.missing_pieces):
             if self.peers[peer_id][piece.index]:
-                pieces.append(piece.index)
+                pieces.append(index)
                 weights.append(self.zipf_formula(piece.index, last_inorder_piece))
 
         if not pieces:
