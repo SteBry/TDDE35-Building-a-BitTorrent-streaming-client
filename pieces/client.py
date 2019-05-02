@@ -97,7 +97,7 @@ class TorrentClient:
             """
             Added by Kalle Johansson, April 2019
             """
-            #result.current_state()
+            result.current_state()
 
             current = time.time()
             if (not previous) or (previous + interval < current):
@@ -529,8 +529,11 @@ class PieceManager:
         the next call to this function will not continue with the blocks for
         that piece, rather get another missing piece.
         """
+        if not self.missing_pieces:
+            return None
+
         pieces = []
-        last_inorder_piece = self.missing_pieces[0].index - 1
+        last_inorder_piece = self.missing_pieces[0].index
         for index, piece in enumerate(self.missing_pieces):
             if self.peers[peer_id][piece.index]:
                 pieces += self.zipf_formula(index, last_inorder_piece) * [index]
@@ -545,7 +548,7 @@ class PieceManager:
             # blocks (then it is ongoing).
             return piece.next_request()
 
-    def zipf_formula(self, k0, k):
+    def zipf_formula(self, k, k0):
         """
         Written by Kalle Johansson, April 2019
 
