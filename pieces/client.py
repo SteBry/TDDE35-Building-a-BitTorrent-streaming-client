@@ -81,6 +81,11 @@ class TorrentClient:
         # Default interval between announce calls (in seconds)
         interval = 30*60
 
+        """
+        Added by Kalle Johansson, April 2019
+        """
+        result = Result(self.piece_manager)
+
         while True:
             if self.piece_manager.complete:
                 logging.info('Torrent fully downloaded!')
@@ -88,6 +93,11 @@ class TorrentClient:
             if self.abort:
                 logging.info('Aborting download...')
                 break
+
+            """
+            Added by Kalle Johansson, April 2019
+            """
+            result.current_state()
 
             current = time.time()
             if (not previous) or (previous + interval < current):
@@ -104,6 +114,7 @@ class TorrentClient:
                         self.available_peers.put_nowait(peer)
             else:
                 await asyncio.sleep(5)
+
         self.stop()
 
     def _empty_queue(self):
@@ -247,6 +258,7 @@ class PieceManager:
     The strategy on which piece to request is made as simple as possible in
     this implementation.
     """
+
     def __init__(self, torrent):
         self.torrent = torrent
         self.peers = {}
@@ -264,6 +276,7 @@ class PieceManager:
         Used for changing request policy.
         """
         self.inorder = True
+        self.rarest_first = False
         self.zipf = False
         self.portion = False
 
@@ -383,6 +396,8 @@ class PieceManager:
             if not block:
                 if self.inorder:
                     block = self._next_missing(peer_id)
+                elif self.rarest_first:
+                    block = self._next_rarest_first(peer_id)
                 elif self.zipf:
                     block = self._next_zipf(peer_id)
                 elif self.portion:
@@ -506,42 +521,135 @@ class PieceManager:
         Go through the missing pieces and return the next block to request
         or None if no block is left to be requested based on Zipf distribution.
 
-        Zipf distribution is implemented by appending a number of copies of an
-        index based on the Zipf formula and the choosing a random element from
-        the list.
+        Zipf distribution is implemented by creating a list of available index
+        for pieces and a list with corresponding weights in accordance with
+        Zipf distribuition and then use the function choices to select an index
+        from the list based on based on the given weights.
+
+        NOTE: Index refers to the piece's index in the list of missing pieces,
+        not the variable index that every piece has.
 
         This will change the state of the piece from missing to ongoing - thus
         the next call to this function will not continue with the blocks for
         that piece, rather get another missing piece.
         """
-        pieces = []
-        last_inorder_piece = self.missing_pieces[0].index - 1
+        if not self.missing_pieces:
+            return None
+
+        indices = []
+        weights = []
+        last_inorder_piece = self.missing_pieces[0].index
         for index, piece in enumerate(self.missing_pieces):
             if self.peers[peer_id][piece.index]:
-                pieces += self.zipf_formula(index, last_inorder_piece) * [index]
+                indices.append(index)
+                weights.append(self.zipf_formula(piece.index, last_inorder_piece))
 
-        if not pieces:
+        if not indices:
             return None
         else:
             # Move the selected piece from missing to ongoing
-            piece = self.missing_pieces.pop(random.choice(pieces))
+            piece = self.missing_pieces.pop(random.choices(indices, weights))
             self.ongoing_pieces.append(piece)
             # The missing pieces does not have any previously requested
             # blocks (then it is ongoing).
             return piece.next_request()
 
-    def zipf_formula(self, k0, k):
+    def zipf_formula(self, k, k0):
         """
         Written by Kalle Johansson, April 2019
-        Uses the Zipf formula to return an integer which represents the chance
-        of the given piece to be chosen.
+
+        Uses the Zipf formula to return float which represents the
+        probability of the given piece to be chosen.
         """
         theta = 1.25
-        precision = 1000
+        return 1 / (k + 1 - k0)**theta
 
-        val = 1 / (k + 1 - k0)**theta
-        return math.ceil(val*precision)
+    def _next_rarest_first(self, peer_id) -> Block:
+        """
+        Written by Kalle Johansson, April 2019
+
+        Iterate over missing pieces and peers to create a list with the number
+        of available copies of a piece in the swarm.
+
+        Go through the missing pieces and return the block to request based on
+        the newly created array or None if no block is left to be requested.
+
+        This will change the state of the piece from missing to ongoing - thus
+        the next call to this function will not continue with the blocks for
+        that piece, rather get the next missing piece.
+
+        NOTE: This is very unefficient since it loops over all peers every time
+        the method is called. This can be done more efficient (see TODO).
+        """
+        piece_count = [0]*len(self.total_pieces)
+
+        # Build piece_count array
+        # TODO: Only do once and increment when HAVE message is received.
+        for index, piece in enumerate(self.missing_pieces):
+            for pid in range(len(self.peers)):
+                if self.peers[pid][piece.index]:
+                    piece_count[index] += 1
+
+        min_index = -1
+        for index, piece in enumerate(self.missing_pieces):
+            if self.peers[peer_id][piece.index]:
+                if min_index == -1 or piece_count[index] < piece_count[min_index]:
+                    min_index = index
+
+        if min_index != -1:
+            # Move this piece from missing to ongoing
+            piece = self.missing_pieces.pop(min_index)
+            self.ongoing_pieces.append(piece)
+            # The missing pieces does not have any previously requested
+            # blocks (then it is ongoing).
+            return piece.next_request()
+        else:
+            return None
 
     def _next_portion(self, peer_id) -> Block:
-        # TODO: Implement
-        return None
+        """
+        Written by Kalle Johansson, April 2019
+
+        Choose a piece using in order or rarest first based on probability.
+        """
+        probability = 9*[True] + [False]
+        choice = random.choice(probability)
+        if choice:
+            return self._next_missing(peer_id)
+        else:
+            return self._next_rarest_first(peer_id)
+
+
+class Result:
+    """
+    Written by Kalle Johansson, April 2019
+
+    Used for gathering measurements about the current state of the client and
+    the entire swarm.
+    """
+    def __init__(self, pm : PieceManager):
+        self.pm = pm
+        self.started = time.time()
+
+    def current_state(self):
+        print("Time elapsed (sec):", time.time() - self.started)
+        print("Received:", str(len(self.pm.have_pieces))+"/"+str(self.pm.total_pieces))
+        print("In order:", self.get_pieces_in_order())
+        print("Pieces in swarm:", self.get_pieces_in_swarm())
+        print("Piece diversity:", self.get_piece_diversity())
+
+    def get_pieces_in_order(self):
+        have = [False] * self.pm.total_pieces
+        for piece in self.pm.have_pieces:
+            have[piece.index] = True
+
+        for i in range(self.pm.total_pieces):
+            if not have[i]:
+                return i
+        return self.pm.total_pieces
+
+    def get_pieces_in_swarm(self):
+        return "Not implemented"
+
+    def get_piece_diversity(self):
+        return "Not implemented"
