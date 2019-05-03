@@ -97,7 +97,7 @@ class TorrentClient:
             """
             Added by Kalle Johansson, April 2019
             """
-            result.current_state()
+            #result.current_state()
 
             current = time.time()
             if (not previous) or (previous + interval < current):
@@ -280,6 +280,12 @@ class PieceManager:
         self.zipf = False
         self.portion = False
 
+        """
+        Written by Kalle Johansson, Mat 2019.
+        Used for rarest first.
+        """
+        self.piece_diversity = [0]*self.total_pieces
+
     def _initiate_pieces(self) -> [Piece]:
         """
         Pre-construct the list of pieces and blocks based on the number of
@@ -350,6 +356,13 @@ class PieceManager:
         """
         self.peers[peer_id] = bitfield
 
+        """
+        Written by Kalle Johansson, May 2019
+        Used for rarest first.
+        """
+        for i, b in enumerate(bitfield):
+            self.piece_diversity[i] += b
+
     def update_peer(self, peer_id, index: int):
         """
         Updates the information about which pieces a peer has (reflects a Have
@@ -357,6 +370,11 @@ class PieceManager:
         """
         if peer_id in self.peers:
             self.peers[peer_id][index] = 1
+            """
+            Written by Kalle Johansson, May 2019
+            Used for rarest first.
+            """
+            self.piece_diversity[index] += 1
 
     def remove_peer(self, peer_id):
         """
@@ -364,6 +382,13 @@ class PieceManager:
         is dropped)
         """
         if peer_id in self.peers:
+            """
+            Modified by Kalle Johansson, May 2019
+            Used for rarest first.
+            """
+            for i, b in enumerate(self.peers[peer_id]):
+                self.piece_diversity[i] -= b
+
             del self.peers[peer_id]
 
     def next_request(self, peer_id) -> Block:
@@ -397,7 +422,7 @@ class PieceManager:
                 if self.inorder:
                     block = self._next_missing(peer_id)
                 elif self.rarest_first:
-                    block = self._next_rarest_first(peer_id)
+                    block = self._next_rarest(peer_id)
                 elif self.zipf:
                     block = self._next_zipf(peer_id)
                 elif self.portion:
@@ -564,36 +589,23 @@ class PieceManager:
         theta = 1.25
         return 1 / (k + 1 - k0)**theta
 
-    def _next_rarest_first(self, peer_id) -> Block:
+    def _next_rarest(self, peer_id) -> Block:
         """
-        Written by Kalle Johansson, April 2019
-
-        Iterate over missing pieces and peers to create a list with the number
-        of available copies of a piece in the swarm.
+        Written by Kalle Johansson, May 2019
 
         Go through the missing pieces and return the block to request based on
-        the newly created array or None if no block is left to be requested.
+        rarest first using the array piece_diversity or None if no block is
+        left to be requested.
 
         This will change the state of the piece from missing to ongoing - thus
         the next call to this function will not continue with the blocks for
         that piece, rather get the next missing piece.
-
-        NOTE: This is very unefficient since it loops over all peers every time
-        the method is called. This can be done more efficient (see TODO).
         """
-        piece_count = [0]*len(self.total_pieces)
-
-        # Build piece_count array
-        # TODO: Only do once and increment when HAVE message is received.
-        for index, piece in enumerate(self.missing_pieces):
-            for pid in range(len(self.peers)):
-                if self.peers[pid][piece.index]:
-                    piece_count[index] += 1
 
         min_index = -1
         for index, piece in enumerate(self.missing_pieces):
             if self.peers[peer_id][piece.index]:
-                if min_index == -1 or piece_count[index] < piece_count[min_index]:
+                if min_index == -1 or self.piece_diversity[index] < self.piece_diversity[min_index]:
                     min_index = index
 
         if min_index != -1:
@@ -612,12 +624,13 @@ class PieceManager:
 
         Choose a piece using in order or rarest first based on probability.
         """
-        probability = 9*[True] + [False]
-        choice = random.choice(probability)
+        outcomes = [True, False]
+        weights = [0,9, 0,1]
+        choice = random.choices(outcomes, weights)
         if choice:
             return self._next_missing(peer_id)
         else:
-            return self._next_rarest_first(peer_id)
+            return self._next_rarest(peer_id)
 
 
 class Result:
@@ -630,13 +643,18 @@ class Result:
     def __init__(self, pm : PieceManager):
         self.pm = pm
         self.started = time.time()
+        output_file = open("result.txt", "w+")
+        output_file.close()
 
     def current_state(self):
-        print("Time elapsed (sec):", time.time() - self.started)
-        print("Received:", str(len(self.pm.have_pieces))+"/"+str(self.pm.total_pieces))
-        print("In order:", self.get_pieces_in_order())
-        print("Pieces in swarm:", self.get_pieces_in_swarm())
-        print("Piece diversity:", self.get_piece_diversity())
+        f = open("result.txt", "a+")
+        f.write("Time elapsed (sec): " + str(time.time() - self.started)+"\n")
+        f.write("Received: " + str(len(self.pm.have_pieces))+"/"+str(self.pm.total_pieces)+"\n")
+        f.write("In order: " + str(self.get_pieces_in_order())+"\n")
+        f.write("Pieces among connected peers (pieces/peers): " + str(self.get_pieces_in_swarm())+"/"+str(self.get_total_connected_peers())+"\n")
+        f.write("Piece diversity: " + str(self.get_piece_diversity())+"\n")
+        f.write("\n")
+        f.close()
 
     def get_pieces_in_order(self):
         have = [False] * self.pm.total_pieces
@@ -649,7 +667,10 @@ class Result:
         return self.pm.total_pieces
 
     def get_pieces_in_swarm(self):
-        return "Not implemented"
+        return sum(self.pm.piece_diversity) + len(self.pm.have_pieces)
 
     def get_piece_diversity(self):
-        return "Not implemented"
+        return self.pm.piece_diversity
+
+    def get_total_connected_peers(self):
+        return len(self.pm.peers)
