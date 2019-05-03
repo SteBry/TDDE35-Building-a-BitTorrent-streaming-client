@@ -20,6 +20,7 @@ import logging
 import struct
 from asyncio import Queue
 from concurrent.futures import CancelledError
+import datetime
 
 import bitstring
 
@@ -117,7 +118,10 @@ class PeerConnection:
                 # long as the connection is open and data is transmitted
                 async for message in PeerStreamIterator(self.reader, buffer):
                     if 'stopped' in self.my_state:
+                        print("Stopped")
                         break
+
+                    print("NEW MESSAGE OF TYPE: ", type(message))
                     if type(message) is BitField:
                         self.piece_manager.add_peer(self.remote_id,
                                                     message.bitfield)
@@ -195,6 +199,7 @@ class PeerConnection:
 
     async def _request_piece(self):
         block = self.piece_manager.next_request(self.remote_id)
+        self.last_request_time = datetime.datetime.now()
         if block:
             message = Request(block.piece, block.offset, block.length).encode()
 
@@ -214,11 +219,14 @@ class PeerConnection:
         to respond with its handshake.
         """
         self.writer.write(Handshake(self.info_hash, self.peer_id).encode())
+        time = datetime.datetime.now()
         await self.writer.drain()
 
         buf = b''
         while len(buf) < Handshake.length:
             buf = await self.reader.read(PeerStreamIterator.CHUNK_SIZE)
+            if (datetime.datetime.now() - time).total_seconds() > 10 and len(buf) < Handshake.length:
+                raise TimeoutError('NO handshake response')
 
         response = Handshake.decode(buf[:Handshake.length])
         if not response:
