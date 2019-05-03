@@ -97,7 +97,7 @@ class TorrentClient:
             """
             Added by Kalle Johansson, April 2019
             """
-            result.current_state()
+            #result.current_state()
 
             current = time.time()
             if (not previous) or (previous + interval < current):
@@ -467,7 +467,7 @@ class PieceManager:
                                     block=request.block.offset,
                                     piece=request.block.piece))
                     # Reset expiration timer
-                    request.added = current
+                    request.added = current #TODO: CRASHES on this line // Stefan Brynielsson
                     return request.block
         return None
 
@@ -619,6 +619,22 @@ class PieceManager:
         else:
             return self._next_rarest_first(peer_id)
 
+    """
+    Written by Stefan Brynielsson, May 2019
+    
+    Creates a Bitfield from the downloaded pieces
+    """
+    def get_bitfield(self) -> bytes:
+        bit_array = self.get_bit_array()
+        res = bytes(bit_array)
+        return res
+
+
+    def get_bit_array(self):
+        have = [False] * self.total_pieces
+        for piece in self.have_pieces:
+            have[piece.index] = True
+        return have
 
 class Result:
     """

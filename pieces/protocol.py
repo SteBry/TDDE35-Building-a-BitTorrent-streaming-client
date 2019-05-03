@@ -103,6 +103,7 @@ class PeerConnection:
                 buffer = await self._handshake()
 
                 # TODO Add support for sending data
+                #await self._send_bitfield()
                 # Sending BitField is optional and not needed when client does
                 # not have any pieces. Thus we do not send any bitfield message
 
@@ -118,10 +119,11 @@ class PeerConnection:
                 # long as the connection is open and data is transmitted
                 async for message in PeerStreamIterator(self.reader, buffer):
                     if 'stopped' in self.my_state:
-                        print("Stopped")
+                        print("Stopped")  # TODO: Remove, used for debugging
                         break
 
-                    print("NEW MESSAGE OF TYPE: ", type(message))
+                    print("NEW MESSAGE OF TYPE: ", type(message), "from:", self.remote_id)  # TODO: Remove, used for debugging
+                    print(self.my_state)
                     if type(message) is BitField:
                         self.piece_manager.add_peer(self.remote_id,
                                                     message.bitfield)
@@ -132,14 +134,18 @@ class PeerConnection:
                             self.peer_state.remove('interested')
                     elif type(message) is Choke:
                         self.my_state.append('choked')
+                        if "pending_request" in self.my_state:
+                            self.my_state.remove('pending_request')
                     elif type(message) is Unchoke:
                         if 'choked' in self.my_state:
                             self.my_state.remove('choked')
+                        if "pending_request" in self.my_state:
+                            self.my_state.remove('pending_request')
                     elif type(message) is Have:
                         self.piece_manager.update_peer(self.remote_id,
                                                        message.index)
                     elif type(message) is KeepAlive:
-                        pass
+                        break
                     elif type(message) is Piece:
                         self.my_state.remove('pending_request')
                         self.on_block_cb(
@@ -199,7 +205,6 @@ class PeerConnection:
 
     async def _request_piece(self):
         block = self.piece_manager.next_request(self.remote_id)
-        self.last_request_time = datetime.datetime.now()
         if block:
             message = Request(block.piece, block.offset, block.length).encode()
 
@@ -213,18 +218,30 @@ class PeerConnection:
             self.writer.write(message)
             await self.writer.drain()
 
+    async def _send_bitfield(self):
+        bytes = BitField(self.piece_manager.get_bitfield()).encode()
+        logging.info('Sending bitfield: {bitfield} . To peer: {peer}'.format(
+            bitfield=bytes,
+            peer=self.remote_id))
+        self.writer.write(bytes)
+        await self.writer.drain()
+
+
+
     async def _handshake(self):
         """
         Send the initial handshake to the remote peer and wait for the peer
         to respond with its handshake.
         """
         self.writer.write(Handshake(self.info_hash, self.peer_id).encode())
-        time = datetime.datetime.now()
+        time = datetime.datetime.now() # Line written by Stefan Brynielsson, May 2019
         await self.writer.drain()
 
         buf = b''
         while len(buf) < Handshake.length:
             buf = await self.reader.read(PeerStreamIterator.CHUNK_SIZE)
+
+            # Statement written by Stefan Brynielsson, May 2019, end the handshake if it takes longer than 10 seconds
             if (datetime.datetime.now() - time).total_seconds() > 10 and len(buf) < Handshake.length:
                 raise TimeoutError('NO handshake response')
 
@@ -510,16 +527,20 @@ class BitField(PeerMessage):
     def __init__(self, data):
         self.bitfield = bitstring.BitArray(bytes=data)
 
+    def __str__(self):
+        return '{bitfield}'.format(bitfield = self.bitfield)
+
     def encode(self) -> bytes:
         """
         Encodes this object instance to the raw bytes representing the entire
         message (ready to be transmitted).
         """
         bits_length = len(self.bitfield)
+
         return struct.pack('>Ib' + str(bits_length) + 's',
                            1 + bits_length,
                            PeerMessage.BitField,
-                           self.bitfield)
+                           bytes(self.bitfield))
 
     @classmethod
     def decode(cls, data: bytes):
