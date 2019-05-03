@@ -536,19 +536,19 @@ class PieceManager:
         if not self.missing_pieces:
             return None
 
-        pieces = []
+        indices = []
         weights = []
         last_inorder_piece = self.missing_pieces[0].index
         for index, piece in enumerate(self.missing_pieces):
             if self.peers[peer_id][piece.index]:
-                pieces.append(index)
+                indices.append(index)
                 weights.append(self.zipf_formula(piece.index, last_inorder_piece))
 
-        if not pieces:
+        if not indices:
             return None
         else:
             # Move the selected piece from missing to ongoing
-            piece = self.missing_pieces.pop(random.choices(pieces, weights))
+            piece = self.missing_pieces.pop(random.choices(indices, weights))
             self.ongoing_pieces.append(piece)
             # The missing pieces does not have any previously requested
             # blocks (then it is ongoing).
@@ -629,8 +629,10 @@ class Result:
     """
     def __init__(self, pm : PieceManager):
         self.pm = pm
+        self.started = time.time()
 
     def current_state(self):
+        print("Time elapsed (sec):", time.time() - self.started)
         print("Received:", str(len(self.pm.have_pieces))+"/"+str(self.pm.total_pieces))
         print("In order:", self.get_pieces_in_order())
         print("Pieces in swarm:", self.get_pieces_in_swarm())
