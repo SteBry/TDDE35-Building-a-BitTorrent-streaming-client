@@ -122,8 +122,11 @@ class PeerConnection:
                         print("Stopped")  # TODO: Remove, used for debugging
                         break
 
-                    print("NEW MESSAGE OF TYPE: ", type(message), "from:", self.remote_id)  # TODO: Remove, used for debugging
-                    print(self.my_state)
+                    #if type(message) is not KeepAlive:
+                    #   print("NEW MESSAGE OF TYPE: ", type(message), "from:", self.remote_id)  # TODO: Remove, used for debugging
+                    #   print(self.my_state)
+
+
                     if type(message) is BitField:
                         self.piece_manager.add_peer(self.remote_id,
                                                     message.bitfield)
@@ -146,6 +149,9 @@ class PeerConnection:
                                                        message.index)
                     elif type(message) is KeepAlive:
                         break
+                        if "pending_request" in self.my_state:
+                            self.my_state.remove('pending_request')
+                        pass
                     elif type(message) is Piece:
                         self.my_state.remove('pending_request')
                         self.on_block_cb(
@@ -242,7 +248,7 @@ class PeerConnection:
             buf = await self.reader.read(PeerStreamIterator.CHUNK_SIZE)
 
             # Statement written by Stefan Brynielsson, May 2019, end the handshake if it takes longer than 10 seconds
-            if (datetime.datetime.now() - time).total_seconds() > 10 and len(buf) < Handshake.length:
+            if (datetime.datetime.now() - time).total_seconds() > 4 and len(buf) < Handshake.length:
                 raise TimeoutError('NO handshake response')
 
         response = Handshake.decode(buf[:Handshake.length])

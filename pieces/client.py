@@ -448,7 +448,7 @@ class PieceManager:
                                  .format(index=piece.index))
                     piece.reset()
         else:
-            logging.warning('Trying to update piece that is not ongoing!')
+            logging.warning('Trying to update piece that is not ongoing!') #TODO this is called after rerequesting, why?
 
     def _expired_requests(self, peer_id) -> Block:
         """
@@ -467,8 +467,10 @@ class PieceManager:
                                     block=request.block.offset,
                                     piece=request.block.piece))
                     # Reset expiration timer
-                    request.added = current #TODO: CRASHES on this line // Stefan Brynielsson
-                    return request.block
+                    newRequest = PendingRequest(request.block, int(round(time.time() * 1000)))
+                    self.pending_blocks.append(newRequest)
+                    del request
+                    return newRequest.block
         return None
 
     def _next_ongoing(self, peer_id) -> Block:
