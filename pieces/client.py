@@ -541,7 +541,7 @@ class PieceManager:
 
     def _next_zipf(self, peer_id) -> Block:
         """
-        Written by Kalle Johansson, April 2019
+        Written by Kalle Johansson, May 2019
 
         Go through the missing pieces and return the next block to request
         or None if no block is left to be requested based on Zipf distribution.
@@ -620,13 +620,13 @@ class PieceManager:
 
     def _next_portion(self, peer_id) -> Block:
         """
-        Written by Kalle Johansson, April 2019
+        Written by Kalle Johansson, May 2019
 
         Choose a piece using in order or rarest first based on probability.
         """
         outcomes = [True, False]
         weights = [0.9, 0.1]
-        choice = random.choices(outcomes, weights)[0]
+        choice = random.choices(outcomes, cum_weights= weights)[0]
         if choice:
             return self._next_missing(peer_id)
         else:
