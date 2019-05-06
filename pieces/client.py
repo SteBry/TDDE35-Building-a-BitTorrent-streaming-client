@@ -573,7 +573,7 @@ class PieceManager:
             return None
         else:
             # Move the selected piece from missing to ongoing
-            piece = self.missing_pieces.pop(random.choices(indices, weights))
+            piece = self.missing_pieces.pop(random.choices(indices, weights)[0])
             self.ongoing_pieces.append(piece)
             # The missing pieces does not have any previously requested
             # blocks (then it is ongoing).
@@ -625,8 +625,8 @@ class PieceManager:
         Choose a piece using in order or rarest first based on probability.
         """
         outcomes = [True, False]
-        weights = [0,9, 0,1]
-        choice = random.choices(outcomes, weights)
+        weights = [0.9, 0.1]
+        choice = random.choices(outcomes, weights)[0]
         if choice:
             return self._next_missing(peer_id)
         else:
@@ -643,8 +643,6 @@ class Result:
     def __init__(self, pm : PieceManager):
         self.pm = pm
         self.started = time.time()
-        output_file = open("result.txt", "w+")
-        output_file.close()
 
     def current_state(self):
         f = open("result.txt", "a+")
@@ -658,19 +656,22 @@ class Result:
 
     def get_pieces_in_order(self):
         have = [False] * self.pm.total_pieces
+        ret = []
         for piece in self.pm.have_pieces:
             have[piece.index] = True
+            ret.append(piece.index)
 
         for i in range(self.pm.total_pieces):
             if not have[i]:
-                return i
-        return self.pm.total_pieces
+                return i, ret
+        return self.pm.total_pieces, ret
 
     def get_pieces_in_swarm(self):
         return sum(self.pm.piece_diversity) + len(self.pm.have_pieces)
 
     def get_piece_diversity(self):
-        return self.pm.piece_diversity
+        #return self.pm.piece_diversity
+        return "Disabled"
 
     def get_total_connected_peers(self):
         return len(self.pm.peers)

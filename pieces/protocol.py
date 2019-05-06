@@ -121,7 +121,7 @@ class PeerConnection:
                         print("Stopped")
                         break
 
-                    print("NEW MESSAGE OF TYPE: ", type(message))
+                    #print("NEW MESSAGE OF TYPE: ", type(message))
                     if type(message) is BitField:
                         self.piece_manager.add_peer(self.remote_id,
                                                     message.bitfield)
