@@ -24,12 +24,19 @@ import random
 from asyncio import Queue
 from collections import namedtuple
 from hashlib import sha1
+from statistics import mean
 
 from pieces.protocol import PeerConnection, REQUEST_SIZE
 from pieces.tracker import Tracker
 
 # The number of max peer connections per TorrentClient
 MAX_PEER_CONNECTIONS = 40
+
+"""
+Added by Kalle Johansson, April 2019
+Global variable for logging results.
+"""
+result = None
 
 
 class TorrentClient:
@@ -84,7 +91,9 @@ class TorrentClient:
         """
         Added by Kalle Johansson, April 2019
         """
+        global result
         result = Result(self.piece_manager)
+        result.current_state()
 
         while True:
             if self.piece_manager.complete:
@@ -93,11 +102,6 @@ class TorrentClient:
             if self.abort:
                 logging.info('Aborting download...')
                 break
-
-            """
-            Added by Kalle Johansson, April 2019
-            """
-            #result.current_state()
 
             current = time.time()
             if (not previous) or (previous + interval < current):
@@ -468,6 +472,11 @@ class PieceManager:
                         .format(complete=complete,
                                 total=self.total_pieces,
                                 per=(complete/self.total_pieces)*100))
+                    """
+                    Added by Kalle Johansson, April 2019
+                    Used for logging results.
+                    """
+                    result.current_state()
                 else:
                     logging.info('Discarding corrupt piece {index}'
                                  .format(index=piece.index))
@@ -643,35 +652,70 @@ class Result:
     def __init__(self, pm : PieceManager):
         self.pm = pm
         self.started = time.time()
+        self.in_order_pieces = 0
+        self.playback = False
+        self.playback_started = None
+        self.playback_canceled = 0
+        self.pieces_when_playback_canceled = 0
 
     def current_state(self):
         f = open("result.txt", "a+")
         f.write("Time elapsed (sec): " + str(time.time() - self.started)+"\n")
-        f.write("Received: " + str(len(self.pm.have_pieces))+"/"+str(self.pm.total_pieces)+"\n")
+        f.write("Received (pieces/total): " + str(len(self.pm.have_pieces))+"/"+str(self.pm.total_pieces)+"\n")
         f.write("In order: " + str(self.get_pieces_in_order())+"\n")
         f.write("Pieces among connected peers (pieces/peers): " + str(self.get_pieces_in_swarm())+"/"+str(self.get_total_connected_peers())+"\n")
-        f.write("Piece diversity: " + str(self.get_piece_diversity())+"\n")
+        f.write("Startup delay: " + str(self.get_startup_delay()) + "\n")
+        f.write("Safety: " + str(self.get_safety()) + "\n")
+        f.write("Playback canceled: " + str(self.get_playback_canceled()) + "\n")
+        #f.write("Piece diversity: " + str(self.get_piece_diversity())+"\n")
         f.write("\n")
         f.close()
 
     def get_pieces_in_order(self):
         have = [False] * self.pm.total_pieces
-        ret = []
+        have_indices = []
         for piece in self.pm.have_pieces:
             have[piece.index] = True
-            ret.append(piece.index)
-
+            have_indices.append(piece.index)
         for i in range(self.pm.total_pieces):
             if not have[i]:
-                return i, ret
-        return self.pm.total_pieces, ret
+                self.in_order_pieces = i
+                return self.in_order_pieces #, have_indices
+        self.in_order_pieces = self.pm.total_pieces
+        return self.in_order_pieces #, have_indices
 
     def get_pieces_in_swarm(self):
         return sum(self.pm.piece_diversity) + len(self.pm.have_pieces)
 
     def get_piece_diversity(self):
-        #return self.pm.piece_diversity
-        return "Disabled"
+        return self.pm.piece_diversity
 
     def get_total_connected_peers(self):
         return len(self.pm.peers)
+
+    def get_startup_delay(self):
+        pieces_to_start = 10
+        if (self.in_order_pieces >= pieces_to_start and self.playback_started == None):
+            self.playback_started = time.time() - self.started
+            self.playback = True
+            self.playback_resumed = self.playback_started
+            return self.playback_started
+        elif self.playback_started != None:
+            return self.playback_started
+        else:
+            return "Playback has not started."
+
+    def get_safety(self):
+        return mean(self.pm.piece_diversity) - min(self.pm.piece_diversity)
+
+    def get_playback_canceled(self):
+        pieces_per_second = 1
+        pieces_to_resume = 10
+        if (self.playback):
+            if (self.in_order_pieces - self.pieces_when_playback_canceled) / (time.time() - self.playback_started) < pieces_per_second:
+                self.playback = False
+                self.playback_canceled += 1
+                self.pieces_when_playback_canceled = self.in_order_pieces
+        elif self.in_order_pieces - self.pieces_when_playback_canceled >= pieces_to_resume:
+            self.playback = True
+        return self.playback_canceled
