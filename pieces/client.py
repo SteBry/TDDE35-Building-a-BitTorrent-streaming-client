@@ -632,9 +632,11 @@ class PieceManager:
         Written by Kalle Johansson, May 2019
 
         Choose a piece using in order or rarest first based on probability.
+        p is the probability of selecting chunks using In-order.
         """
+        p = 0.9
         outcomes = [True, False]
-        weights = [0.9, 0.1]
+        weights = [p, 1-p]
         choice = random.choices(outcomes, cum_weights= weights)[0]
         if choice:
             return self._next_missing(peer_id)
@@ -662,7 +664,7 @@ class Result:
         f = open("result.txt", "a+")
         f.write("Time elapsed (sec): " + str(time.time() - self.started)+"\n")
         f.write("Received (pieces/total): " + str(len(self.pm.have_pieces))+"/"+str(self.pm.total_pieces)+"\n")
-        f.write("In order: " + str(self.get_pieces_in_order())+"\n")
+        f.write("In-order: " + str(self.get_pieces_in_order())+"\n")
         f.write("Pieces among connected peers (pieces/peers): " + str(self.get_pieces_in_swarm())+"/"+str(self.get_total_connected_peers())+"\n")
         f.write("Startup delay: " + str(self.get_startup_delay()) + "\n")
         f.write("Safety: " + str(self.get_safety()) + "\n")
@@ -706,12 +708,13 @@ class Result:
             return "Playback has not started."
 
     def get_safety(self):
+        # TODO: Count own pieces as well. Maybe in the whole list?
         return mean(self.pm.piece_diversity) - min(self.pm.piece_diversity)
 
     def get_playback_canceled(self):
         pieces_per_second = 1
         pieces_to_resume = 10
-        if (self.playback):
+        if self.playback:
             if (self.in_order_pieces - self.pieces_when_playback_canceled) / (time.time() - self.playback_started) < pieces_per_second:
                 self.playback = False
                 self.playback_canceled += 1
