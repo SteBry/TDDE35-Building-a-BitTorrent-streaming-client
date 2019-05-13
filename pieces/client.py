@@ -501,8 +501,13 @@ class PieceManager:
                                     block=request.block.offset,
                                     piece=request.block.piece))
                     # Reset expiration timer
-                    request.added = current
-                    return request.block
+                    """
+                    Written/modified by Stefan Brynielsson, May 2019
+                    """
+                    newRequest = PendingRequest(request.block, int(round(time.time() * 1000)))
+                    self.pending_blocks.append(newRequest)
+                    self.pending_blocks.remove(request)
+                    return newRequest.block
         return None
 
     def _next_ongoing(self, peer_id) -> Block:

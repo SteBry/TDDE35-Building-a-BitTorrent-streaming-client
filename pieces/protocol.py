@@ -33,6 +33,7 @@ import bitstring
 #       https://wiki.theory.org/BitTorrentSpecification
 #
 REQUEST_SIZE = 2**14
+HANDSHAKE_TIMEOUT = 4
 
 
 class ProtocolError(BaseException):
@@ -118,10 +119,8 @@ class PeerConnection:
                 # long as the connection is open and data is transmitted
                 async for message in PeerStreamIterator(self.reader, buffer):
                     if 'stopped' in self.my_state:
-                        print("Stopped")
                         break
 
-                    #print("NEW MESSAGE OF TYPE: ", type(message))
                     if type(message) is BitField:
                         self.piece_manager.add_peer(self.remote_id,
                                                     message.bitfield)
@@ -132,14 +131,27 @@ class PeerConnection:
                             self.peer_state.remove('interested')
                     elif type(message) is Choke:
                         self.my_state.append('choked')
+                        """
+                        written/modified by Stefan Brynielsson, May 2019
+                        """
+                        if "pending_request" in self.my_state:
+                            self.my_state.remove('pending_request')
                     elif type(message) is Unchoke:
                         if 'choked' in self.my_state:
                             self.my_state.remove('choked')
+                        """
+                        written/modified by Stefan Brynielsson, May 2019
+                        """
+                        if "pending_request" in self.my_state:
+                            self.my_state.remove('pending_request')
                     elif type(message) is Have:
                         self.piece_manager.update_peer(self.remote_id,
                                                        message.index)
                     elif type(message) is KeepAlive:
-                        pass
+                        """
+                        Written/modified by Stefan Brynielsson, May 2019
+                        """
+                        break
                     elif type(message) is Piece:
                         self.my_state.remove('pending_request')
                         self.on_block_cb(
@@ -199,7 +211,6 @@ class PeerConnection:
 
     async def _request_piece(self):
         block = self.piece_manager.next_request(self.remote_id)
-        self.last_request_time = datetime.datetime.now()
         if block:
             message = Request(block.piece, block.offset, block.length).encode()
 
@@ -219,13 +230,21 @@ class PeerConnection:
         to respond with its handshake.
         """
         self.writer.write(Handshake(self.info_hash, self.peer_id).encode())
+        """
+        Written/modified by Stefan Brynielsson, May 2019
+        """
         time = datetime.datetime.now()
         await self.writer.drain()
 
         buf = b''
         while len(buf) < Handshake.length:
             buf = await self.reader.read(PeerStreamIterator.CHUNK_SIZE)
-            if (datetime.datetime.now() - time).total_seconds() > 10 and len(buf) < Handshake.length:
+
+            """
+            Written/modified by Stefan Brynielsson, May 2019
+            """
+            # End the handshake if it takes longer than HANDSHAKE_TIMEOUT seconds
+            if (datetime.datetime.now() - time).total_seconds() > HANDSHAKE_TIMEOUT and len(buf) < Handshake.length:
                 raise TimeoutError('NO handshake response')
 
         response = Handshake.decode(buf[:Handshake.length])
@@ -262,7 +281,7 @@ class PeerStreamIterator:
     """
     CHUNK_SIZE = 10*1024
 
-    def __init__(self, reader, initial: bytes=None):
+    def __init__(self, reader, initial: bytes = None):
         self.reader = reader
         self.buffer = initial if initial else b''
 
@@ -519,7 +538,7 @@ class BitField(PeerMessage):
         return struct.pack('>Ib' + str(bits_length) + 's',
                            1 + bits_length,
                            PeerMessage.BitField,
-                           self.bitfield)
+                           bytes(self.bitfield))
 
     @classmethod
     def decode(cls, data: bytes):
