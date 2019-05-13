@@ -672,7 +672,7 @@ class Result:
         f.write("In-order: " + str(self.get_pieces_in_order())+"\n")
         f.write("Pieces among connected peers (pieces/peers): " + str(self.get_pieces_in_swarm())+"/"+str(self.get_total_connected_peers())+"\n")
         f.write("Startup delay: " + str(self.get_startup_delay()) + "\n")
-        f.write("Safety: " + str(self.get_safety()) + "\n")
+        f.write("Stability: " + str(self.get_stability()) + "\n")
         f.write("Playback canceled: " + str(self.get_playback_canceled()) + "\n")
         #f.write("Piece diversity: " + str(self.get_piece_diversity())+"\n")
         f.write("\n")
@@ -712,8 +712,7 @@ class Result:
         else:
             return "Playback has not started."
 
-    def get_safety(self):
-        # TODO: Count own pieces as well. Maybe in the whole list?
+    def get_stability(self):
         return mean(self.pm.piece_diversity) - min(self.pm.piece_diversity)
 
     def get_playback_canceled(self):
