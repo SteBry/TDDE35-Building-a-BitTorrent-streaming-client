@@ -270,7 +270,7 @@ class PieceManager:
         self.missing_pieces = []
         self.ongoing_pieces = []
         self.have_pieces = []
-        self.max_pending_time = 300 * 1000  # 5 minutes
+        self.max_pending_time = 10 * 1000  # 5 minutes
         self.missing_pieces = self._initiate_pieces()
         self.total_pieces = len(torrent.pieces)
         self.fd = os.open(self.torrent.output_file,  os.O_RDWR | os.O_CREAT)
