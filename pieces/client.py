@@ -266,7 +266,7 @@ class PieceManager:
         self.missing_pieces = []
         self.ongoing_pieces = []
         self.have_pieces = []
-        self.max_pending_time = 300 * 1000  # 5 minutes
+        self.max_pending_time = 100 * 1000  # 5 minutes
         self.missing_pieces = self._initiate_pieces()
         self.total_pieces = len(torrent.pieces)
         self.fd = os.open(self.torrent.output_file,  os.O_RDWR | os.O_CREAT)
@@ -279,6 +279,7 @@ class PieceManager:
         self.rarest_first = False
         self.zipf = False
         self.portion = False
+
 
     def _initiate_pieces(self) -> [Piece]:
         """
@@ -432,6 +433,9 @@ class PieceManager:
             piece.block_received(block_offset, data)
             if piece.is_complete():
                 if piece.is_hash_matching():
+                    f = open("done.txt", "a+")
+                    f.write("Piece: " + str(piece.index) + " IS DONE\n")
+
                     self._write(piece)
                     self.ongoing_pieces.remove(piece)
                     self.have_pieces.append(piece)
@@ -448,7 +452,7 @@ class PieceManager:
                                  .format(index=piece.index))
                     piece.reset()
         else:
-            logging.warning('Trying to update piece that is not ongoing!') #TODO this is called after rerequesting, why?
+            logging.warning('Trying to update piece that is not ongoing!')
 
     def _expired_requests(self, peer_id) -> Block:
         """
@@ -467,9 +471,12 @@ class PieceManager:
                                     block=request.block.offset,
                                     piece=request.block.piece))
                     # Reset expiration timer
+                    """
+                    Written/modified by Stefan Brynielsson, May 2019
+                    """
                     newRequest = PendingRequest(request.block, int(round(time.time() * 1000)))
                     self.pending_blocks.append(newRequest)
-                    del request
+                    self.pending_blocks.remove(request)
                     return newRequest.block
         return None
 
@@ -620,23 +627,6 @@ class PieceManager:
             return self._next_missing(peer_id)
         else:
             return self._next_rarest_first(peer_id)
-
-    """
-    Written by Stefan Brynielsson, May 2019
-    
-    Creates a Bitfield from the downloaded pieces
-    """
-    def get_bitfield(self) -> bytes:
-        bit_array = self.get_bit_array()
-        res = bytes(bit_array)
-        return res
-
-
-    def get_bit_array(self):
-        have = [False] * self.total_pieces
-        for piece in self.have_pieces:
-            have[piece.index] = True
-        return have
 
 class Result:
     """
