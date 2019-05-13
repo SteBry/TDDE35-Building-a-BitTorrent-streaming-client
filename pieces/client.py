@@ -433,8 +433,6 @@ class PieceManager:
             piece.block_received(block_offset, data)
             if piece.is_complete():
                 if piece.is_hash_matching():
-                    f = open("done.txt", "a+")
-                    f.write("Piece: " + str(piece.index) + " IS DONE\n")
 
                     self._write(piece)
                     self.ongoing_pieces.remove(piece)
