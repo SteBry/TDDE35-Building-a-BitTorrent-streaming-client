@@ -131,11 +131,17 @@ class PeerConnection:
                             self.peer_state.remove('interested')
                     elif type(message) is Choke:
                         self.my_state.append('choked')
+                        """
+                        written/modified by Stefan Brynielsson, May 2019
+                        """
                         if "pending_request" in self.my_state:
                             self.my_state.remove('pending_request')
                     elif type(message) is Unchoke:
                         if 'choked' in self.my_state:
                             self.my_state.remove('choked')
+                        """
+                        written/modified by Stefan Brynielsson, May 2019
+                        """
                         if "pending_request" in self.my_state:
                             self.my_state.remove('pending_request')
                     elif type(message) is Have:
@@ -529,7 +535,6 @@ class BitField(PeerMessage):
         message (ready to be transmitted).
         """
         bits_length = len(self.bitfield)
-
         return struct.pack('>Ib' + str(bits_length) + 's',
                            1 + bits_length,
                            PeerMessage.BitField,

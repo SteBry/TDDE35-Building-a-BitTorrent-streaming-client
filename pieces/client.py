@@ -97,7 +97,7 @@ class TorrentClient:
             """
             Added by Kalle Johansson, April 2019
             """
-            #result.current_state()
+            result.current_state()
 
             current = time.time()
             if (not previous) or (previous + interval < current):
@@ -266,7 +266,7 @@ class PieceManager:
         self.missing_pieces = []
         self.ongoing_pieces = []
         self.have_pieces = []
-        self.max_pending_time = 100 * 1000  # 5 minutes
+        self.max_pending_time = 300 * 1000  # 5 minutes
         self.missing_pieces = self._initiate_pieces()
         self.total_pieces = len(torrent.pieces)
         self.fd = os.open(self.torrent.output_file,  os.O_RDWR | os.O_CREAT)
@@ -279,7 +279,6 @@ class PieceManager:
         self.rarest_first = False
         self.zipf = False
         self.portion = False
-
 
     def _initiate_pieces(self) -> [Piece]:
         """
@@ -433,7 +432,6 @@ class PieceManager:
             piece.block_received(block_offset, data)
             if piece.is_complete():
                 if piece.is_hash_matching():
-
                     self._write(piece)
                     self.ongoing_pieces.remove(piece)
                     self.have_pieces.append(piece)
@@ -625,6 +623,7 @@ class PieceManager:
             return self._next_missing(peer_id)
         else:
             return self._next_rarest_first(peer_id)
+
 
 class Result:
     """
